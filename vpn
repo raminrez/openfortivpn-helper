@@ -1,0 +1,275 @@
+#!/bin/bash
+
+# VPN Management Script for openfortivpn
+# Provides a unified CLI for managing VPN connections on macOS
+# Version: 1.0.0
+
+set -euo pipefail
+
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+CONFIG_DIR="$HOME/.config/openfortivpn"
+CONFIG_FILE="$CONFIG_DIR/config"
+LOG_FILE="$CONFIG_DIR/vpn.log"
+INSTALL_DIR="/usr/local/bin"
+FALLBACK_INSTALL_DIR="$HOME/bin"
+
+# Ensure config directory exists
+mkdir -p "$CONFIG_DIR"
+
+# Helper functions
+print_error() {
+    echo -e "${RED}✗ Error:${NC} $1" >&2
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
+check_root() {
+    if [[ $EUID -eq 0 ]]; then
+        print_error "This script should not be run as root. It will prompt for sudo when needed."
+        exit 1
+    fi
+}
+
+check_dependencies() {
+    if ! command -v openfortivpn &> /dev/null; then
+        print_error "openfortivpn is not installed. Run './install.sh' first."
+        exit 1
+    fi
+}
+
+check_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        print_error "Configuration file not found: $CONFIG_FILE"
+        print_info "Run 'vpn config' to create a configuration file."
+        exit 1
+    fi
+}
+
+get_public_ip() {
+    local ip
+    if ip=$(curl -s --max-time 5 ipinfo.io/ip 2>/dev/null); then
+        echo "$ip"
+    else
+        echo "unknown"
+    fi
+}
+
+check_vpn_status() {
+    if pgrep -f openfortivpn > /dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+show_status() {
+    print_info "VPN Status Check"
+    echo "================"
+    
+    if check_vpn_status; then
+        print_success "VPN is currently running"
+        
+        # Show process details
+        local pid=$(pgrep -f openfortivpn)
+        echo "  Process ID: $pid"
+        
+        # Show public IP
+        local current_ip=$(get_public_ip)
+        echo "  Current IP: $current_ip"
+        
+        # Show config being used
+        echo "  Config: $CONFIG_FILE"
+        
+        # Show log location
+        echo "  Log file: $LOG_FILE"
+        
+    else
+        print_warning "VPN is not running"
+        local current_ip=$(get_public_ip)
+        echo "  Current IP: $current_ip"
+    fi
+}
+
+start_vpn() {
+    check_dependencies
+    check_config
+    check_root
+
+    if check_vpn_status; then
+        print_warning "VPN is already running. Use 'vpn restart' to restart."
+        return 1
+    fi
+
+    print_info "Starting VPN ..."
+    print_info "Press Ctrl+C to disconnect"
+
+    # Start in foreground 
+    sudo openfortivpn -c "$CONFIG_FILE"
+}
+
+
+stop_vpn() {
+    check_root
+
+    if check_vpn_status; then
+        print_info "Stopping VPN..."
+        sudo pkill -f openfortivpn
+        print_success "VPN stopped"
+    else
+        print_warning "VPN is not running"
+    fi
+}
+
+kill_vpn() {
+    check_root
+
+    print_info "Forcefully killing all VPN processes..."
+    sudo pkill -9 -f openfortivpn
+    print_success "All VPN processes killed"
+}
+
+restart_vpn() {
+    print_info "Restarting VPN..."
+    stop_vpn
+    sleep 2
+    start_vpn
+}
+
+show_logs() {
+    if [[ -f "$LOG_FILE" ]]; then
+        print_info "VPN logs (last 50 lines):"
+        echo "======================="
+        tail -50 "$LOG_FILE"
+        
+        echo ""
+        print_info "Real-time logs (Ctrl+C to exit):"
+        tail -f "$LOG_FILE"
+    else
+        print_warning "No log file found. Start the VPN first with 'vpn start'"
+    fi
+}
+
+edit_config() {
+    local editor
+    
+    # Try to find a suitable editor
+    for ed in "${VISUAL:-}" "${EDITOR:-}" code vim nano; do
+        if [[ -n "$ed" ]] && command -v "$ed" &> /dev/null; then
+            editor="$ed"
+            break
+        fi
+    done
+    
+    if [[ -z "$editor" ]]; then
+        print_error "No suitable editor found. Please set EDITOR or VISUAL environment variable."
+        exit 1
+    fi
+    
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        print_info "Creating new configuration file..."
+        if [[ -f "config_template" ]]; then
+            cp config_template "$CONFIG_FILE"
+        else
+            cat > "$CONFIG_FILE" << 'EOF'
+# OpenFortiVPN Configuration
+# Edit this file with your VPN details
+
+host = vpn.example.com
+port = 443
+username = your-username
+password = your-password
+# trusted-cert = sha256:abcd1234...
+EOF
+        fi
+        print_success "Configuration template created at $CONFIG_FILE"
+    fi
+    
+    print_info "Opening configuration file with $editor..."
+    "$editor" "$CONFIG_FILE"
+}
+
+show_help() {
+    cat << EOF
+VPN Management Script for openfortivpn
+
+USAGE:
+    vpn [COMMAND] [OPTIONS]
+
+COMMANDS:
+    start           Start VPN
+    stop            Stop VPN gracefully
+    kill            Force kill all VPN processes
+    restart         Restart VPN connection
+    status          Show current VPN status
+    logs            Show VPN logs and real-time monitoring
+    config          Create/edit VPN configuration
+    help            Show this help message
+
+EXAMPLES:
+    vpn start          # Start VPN
+    vpn stop           # Stop VPN
+    vpn status         # Check VPN status
+    vpn logs           # View VPN logs
+    vpn config         # Edit VPN configuration
+
+FILES:
+    Config: $CONFIG_FILE
+    Logs:   $LOG_FILE
+
+CONFIGURATION:
+    The configuration file ($CONFIG_FILE) should contain your VPN details.
+    Use 'vpn config' to create or edit it.
+
+EOF
+}
+
+# Main command dispatcher
+case "${1:-help}" in
+    "start")
+        start_vpn
+        ;;
+    "stop")
+        stop_vpn
+        ;;
+    "kill")
+        kill_vpn
+        ;;
+    "restart")
+        restart_vpn
+        ;;
+    "status")
+        show_status
+        ;;
+    "logs")
+        show_logs
+        ;;
+    "config")
+        edit_config
+        ;;
+    "help"|"-h"|"--help")
+        show_help
+        ;;
+    *)
+        print_error "Unknown command: $1"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac

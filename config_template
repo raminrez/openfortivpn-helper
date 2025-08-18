@@ -1,0 +1,39 @@
+# OpenFortiVPN Configuration Template
+# Copy this file to ~/.config/openfortivpn/config and customize it for your VPN
+# NOTE: This project uses interactive foreground connections only. You will be
+# prompted for passwords and one-time passwords (OTP) in your terminal when
+# running `vpn start`.
+
+# Minimal configuration (required)
+# Replace values with your VPN server details.
+host = your-vpn-server.com
+port = 443
+username = your-username
+
+# Optional: leave password commented out to be prompted interactively
+# WARNING: storing passwords in plain text is not recommended
+# password = your-password
+
+# Optional: pin the server certificate for security (recommended)
+# Get the hash with: openfortivpn your-vpn-server.com:443 --check-cert
+# trusted-cert = sha256:your_certificate_hash_here
+
+# Optional: DNS servers to use while connected (one per line)
+# dns = 8.8.8.8
+# dns = 8.8.4.4
+
+# Optional: additional routes to add when the tunnel is up
+# route = 10.0.0.0/255.0.0.0
+# route = 192.168.1.0/255.255.255.0
+
+# Security notes:
+# - Keep this file readable only by your user (installer sets 600 permissions).
+# - Prefer leaving the password out and entering it interactively.
+# - Use trusted-cert to avoid man-in-the-middle attacks.
+
+# Example:
+# host = vpn.company.com
+# port = 443
+# username = alice
+# trusted-cert = sha256:abcd1234...
+# dns = 8.8.8.8
