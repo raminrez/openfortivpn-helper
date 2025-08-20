@@ -9,8 +9,8 @@ Important: This version supports only interactive foreground connections (you mu
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/your-username/vpn-management.git
-   cd vpn-management
+   git clone https://github.com/raminrez/openfortivpn-helper.git
+   cd openfortivpn-helper
    ```
 
 2. Run the installer:
